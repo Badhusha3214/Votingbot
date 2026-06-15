@@ -2,8 +2,7 @@
 #define CONFIG_H
 
 // --- FIREBASE SETTINGS ---
-#define DEFAULT_FIREBASE_PROJECT_ID "vtic-voting-system"
-#define DEFAULT_FIREBASE_API_KEY    "YOUR_API_KEY_HERE"
+
 
 // --- VOTING LAYOUT ---
 #define NUM_SECTIONS            4

@@ -204,6 +204,7 @@ void setup() {
     currentState = STATE_INITIAL_SETUP;
     updateLED();
     wifiManager.startPortal();
+    wifiManager.waitForScan();
   }
 }
 

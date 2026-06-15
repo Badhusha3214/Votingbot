@@ -4,8 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { db } from '../lib/firebase';
 import {
   doc, collection,
-  onSnapshot, setDoc,
-  getDocs, writeBatch,
+  onSnapshot, setDoc, addDoc,
+  getDocs, writeBatch, query, orderBy,
 } from 'firebase/firestore';
 
 // ── Defaults written to Firestore on first load ──────────────────────────────
@@ -18,6 +18,13 @@ const DEFAULTS = {
     { name: 'Sports Captain', candidates: ['Candidate 1', 'Candidate 2', 'Candidate 3'] },
   ],
 };
+
+const STRIPE_COLORS = [
+  ['#3b82f6', '#06b6d4'],
+  ['#10b981', '#84cc16'],
+  ['#f59e0b', '#f97316'],
+  ['#8b5cf6', '#ec4899'],
+];
 
 function clone(obj) { return JSON.parse(JSON.stringify(obj)); }
 
@@ -36,7 +43,7 @@ function aggregateVotes(docs) {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function SectionCard({ sectionIndex, section, voteCounts, active, onSectionName, onCandidateName }) {
+function SectionCard({ sectionIndex, section, voteCounts, onSectionName, onCandidateName }) {
   const total = voteCounts.reduce((a, b) => a + b, 0);
   const cls   = `card s${sectionIndex}`;
 
@@ -95,9 +102,9 @@ function DevicesPanel({ devices }) {
     <div className="devices">
       <div className="devices-title">CONNECTED TERMINALS</div>
       {devices.map(dev => {
-        const isOnline  = dev.online && (Date.now() / 1000 - (dev.lastActive ?? 0)) < 120;
-        const pending   = dev.pendingVotes ?? 0;
-        const lastSeen  = dev.lastActive
+        const isOnline = dev.online && (Date.now() / 1000 - (dev.lastActive ?? 0)) < 120;
+        const pending  = dev.pendingVotes ?? 0;
+        const lastSeen = dev.lastActive
           ? new Date(dev.lastActive * 1000).toLocaleTimeString()
           : '—';
         return (
@@ -117,32 +124,149 @@ function DevicesPanel({ devices }) {
   );
 }
 
-// ── Main dashboard ────────────────────────────────────────────────────────────
+// ── Election History ──────────────────────────────────────────────────────────
+
+function HistorySection({ section, sectionIndex }) {
+  const total = section.votes.reduce((a, b) => a + b, 0);
+  const winner = section.votes.indexOf(Math.max(...section.votes));
+  const [from, to] = STRIPE_COLORS[sectionIndex] ?? ['#64748b', '#94a3b8'];
+
+  return (
+    <div className="hist-section">
+      <div className="hist-section-stripe" style={{ background: `linear-gradient(90deg, ${from}, ${to})` }} />
+      <div className="hist-section-hdr">
+        <span className="hist-section-name">{section.name}</span>
+        <span className="hist-section-total">{total} votes</span>
+      </div>
+      {section.candidates.map((name, c) => {
+        const v   = section.votes[c] ?? 0;
+        const pct = total > 0 ? Math.round((v / total) * 100) : 0;
+        return (
+          <div className="hist-cand" key={c}>
+            <div className="hist-cand-top">
+              {c === winner && total > 0 && <span className="hist-winner-badge">🏆</span>}
+              <span className={`hist-cand-name ${c === winner && total > 0 ? 'hist-winner' : ''}`}>{name}</span>
+              <span className="hist-cand-votes">{v}</span>
+              <span className="hist-cand-pct">{pct}%</span>
+            </div>
+            <div className="hist-bar-bg">
+              <div
+                className="hist-bar-fill"
+                style={{
+                  width: `${total > 0 ? Math.max(pct, 1) : 0}%`,
+                  background: `linear-gradient(90deg, ${from}, ${to})`,
+                }}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function HistoryCard({ record, defaultOpen }) {
+  const [open, setOpen] = useState(defaultOpen ?? false);
+  const date = new Date(record.archivedAt);
+  const dateStr = date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  const timeStr = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+
+  return (
+    <div className="hist-card">
+      <button className="hist-card-hdr" onClick={() => setOpen(o => !o)}>
+        <div className="hist-card-left">
+          <span className="hist-card-icon">🗳️</span>
+          <div>
+            <div className="hist-card-date">{dateStr} · {timeStr}</div>
+            <div className="hist-card-meta">{record.totalVotes} total votes · {record.sections?.length ?? 0} sections</div>
+          </div>
+        </div>
+        <span className="hist-chevron">{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div className="hist-card-body">
+          <div className="hist-sections-grid">
+            {(record.sections ?? []).map((sec, i) => (
+              <HistorySection key={i} section={sec} sectionIndex={i} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ElectionHistory() {
+  const [records, setRecords]  = useState(null);
+  const [error,   setError]    = useState(null);
+
+  useEffect(() => {
+    const q = query(collection(db, 'elections'), orderBy('archivedAt', 'desc'));
+    const unsub = onSnapshot(
+      q,
+      snap => setRecords(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+      err  => setError(err.message),
+    );
+    return unsub;
+  }, []);
+
+  if (error) return (
+    <div className="hist-empty">
+      <p style={{ color: 'var(--red)' }}>Failed to load history: {error}</p>
+    </div>
+  );
+
+  if (records === null) return (
+    <div className="loading"><div className="spinner" /></div>
+  );
+
+  if (records.length === 0) return (
+    <div className="hist-empty">
+      <div className="hist-empty-icon">📭</div>
+      <div className="hist-empty-title">No past elections yet</div>
+      <div className="hist-empty-sub">
+        When you reset votes, the current results are automatically archived here.
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="hist-list">
+      <div className="hist-list-hdr">
+        <span className="hist-list-title">PAST ELECTIONS</span>
+        <span className="hist-list-count">{records.length} record{records.length !== 1 ? 's' : ''}</span>
+      </div>
+      {records.map((r, i) => (
+        <HistoryCard key={r.id} record={r} defaultOpen={i === 0} />
+      ))}
+    </div>
+  );
+}
+
+// ── Main Dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
-  // Firestore live state
-  const [cfg,     setCfg]     = useState(null);            // null = loading
+  const [cfg,     setCfg]     = useState(null);
   const [votes,   setVotes]   = useState([[0,0,0],[0,0,0],[0,0,0],[0,0,0]]);
   const [devices, setDevices] = useState([]);
   const [fbError, setFbError] = useState(null);
+  const [tab,     setTab]     = useState('live');   // 'live' | 'history'
 
-  // Local editing state
-  const [draft,   setDraft]   = useState(null);            // null = not editing
-  const [dirty,   setDirty]   = useState(false);
-  const [saving,  setSaving]  = useState(false);
-  const [toast,   setToast]   = useState(null);            // {msg, ok}
+  const [draft,  setDraft]  = useState(null);
+  const [dirty,  setDirty]  = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [toast,  setToast]  = useState(null);
 
-  const display = draft ?? cfg ?? DEFAULTS; // what the UI renders
+  const display = draft ?? cfg ?? DEFAULTS;
 
   // ── Firebase listeners ──────────────────────────────────────────────────
   useEffect(() => {
-    // Config doc
     const cfgUnsub = onSnapshot(
       doc(db, 'config', 'election'),
       snap => {
         if (snap.exists()) {
           setCfg(snap.data());
         } else {
-          // First-time setup: write defaults
           setDoc(doc(db, 'config', 'election'), DEFAULTS).catch(() => {});
           setCfg(DEFAULTS);
         }
@@ -150,14 +274,12 @@ export default function Dashboard() {
       err => setFbError(err.message),
     );
 
-    // Votes collection — live aggregate
     const votesUnsub = onSnapshot(
       collection(db, 'votes'),
       snap => setVotes(aggregateVotes(snap.docs)),
       err  => console.error('Votes listener:', err),
     );
 
-    // Devices collection
     const devsUnsub = onSnapshot(
       collection(db, 'devices'),
       snap => setDevices(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
@@ -225,24 +347,48 @@ export default function Dashboard() {
   }
 
   async function resetVotes() {
-    if (!confirm('Reset ALL vote counts to zero?\n\nThis deletes every vote document and cannot be undone.')) return;
+    const totalVotes = votes.flat().reduce((a, b) => a + b, 0);
+
+    const confirmMsg = totalVotes > 0
+      ? `Archive and reset ALL ${totalVotes} votes?\n\nThis will save results to History then clear the current election.`
+      : 'No votes recorded. Clear the election anyway?';
+
+    if (!confirm(confirmMsg)) return;
+
     try {
-      const snap = await getDocs(collection(db, 'votes'));
-      if (snap.size === 0) { showToast('No votes to reset.'); return; }
-      // Batch-delete in chunks of 400
-      let remaining = [...snap.docs];
-      while (remaining.length > 0) {
-        const batch = writeBatch(db);
-        remaining.splice(0, 400).forEach(d => batch.delete(d.ref));
-        await batch.commit();
+      // 1. Archive current results before deleting
+      if (totalVotes > 0) {
+        const currentCfg = cfg ?? DEFAULTS;
+        const archiveData = {
+          archivedAt: new Date().toISOString(),
+          totalVotes,
+          sections: currentCfg.sections.map((sec, s) => ({
+            name: sec.name,
+            candidates: sec.candidates,
+            votes: votes[s] ?? [0, 0, 0],
+          })),
+        };
+        await addDoc(collection(db, 'elections'), archiveData);
       }
-      showToast('All votes reset to zero.');
+
+      // 2. Batch-delete all vote documents
+      const snap = await getDocs(collection(db, 'votes'));
+      if (snap.size > 0) {
+        let remaining = [...snap.docs];
+        while (remaining.length > 0) {
+          const batch = writeBatch(db);
+          remaining.splice(0, 400).forEach(d => batch.delete(d.ref));
+          await batch.commit();
+        }
+      }
+
+      showToast(totalVotes > 0 ? '✅ Results archived & votes reset.' : 'Votes cleared.');
     } catch (e) {
       showToast('Reset failed: ' + e.message, false);
     }
   }
 
-  // ── Derived values ──────────────────────────────────────────────────────
+  // ── Derived ─────────────────────────────────────────────────────────────
   const totalVotes = votes.flat().reduce((a, b) => a + b, 0);
   const isActive   = display.active;
 
@@ -257,12 +403,11 @@ export default function Dashboard() {
     );
   }
 
-  // ── Loading ─────────────────────────────────────────────────────────────
   if (!cfg) {
     return <div className="loading"><div className="spinner" /></div>;
   }
 
-  // ── Dashboard ───────────────────────────────────────────────────────────
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
     <>
       {/* Header */}
@@ -274,6 +419,14 @@ export default function Dashboard() {
             <div className="hdr-sub">Smart School Election Terminal</div>
           </div>
         </div>
+        <div className="hdr-center">
+          <button className={`tab-btn ${tab === 'live' ? 'tab-active' : ''}`} onClick={() => setTab('live')}>
+            Live Results
+          </button>
+          <button className={`tab-btn ${tab === 'history' ? 'tab-active' : ''}`} onClick={() => setTab('history')}>
+            History
+          </button>
+        </div>
         <div className="hdr-right">
           <div className="wifi-row">
             <div className={`dot ${devices.length > 0 ? 'dot-on' : 'dot-off'}`} />
@@ -282,64 +435,66 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* Unsaved-changes banner */}
-      {dirty && (
-        <div className="banner">
-          <span className="banner-msg">You have unsaved changes to the election configuration.</span>
-          <button className="btn btn-blue" onClick={saveConfig} disabled={saving}>
-            {saving ? 'Saving…' : '✓ Save Configuration'}
-          </button>
-          <button className="btn btn-outline" onClick={discardChanges}>Discard</button>
-        </div>
+      {/* ── LIVE TAB ── */}
+      {tab === 'live' && (
+        <>
+          {dirty && (
+            <div className="banner">
+              <span className="banner-msg">You have unsaved changes to the election configuration.</span>
+              <button className="btn btn-blue" onClick={saveConfig} disabled={saving}>
+                {saving ? 'Saving…' : '✓ Save Configuration'}
+              </button>
+              <button className="btn btn-outline" onClick={discardChanges}>Discard</button>
+            </div>
+          )}
+
+          <div className="ctrl">
+            <span className={`badge ${isActive ? 'badge-active' : 'badge-stopped'}`}>
+              {isActive ? 'ACTIVE' : 'STOPPED'}
+            </span>
+
+            {!isActive
+              ? <button className="btn btn-green" onClick={() => setActive(true)}>▶ Start Election</button>
+              : <button className="btn btn-red"   onClick={() => setActive(false)}>⏹ Stop Election</button>
+            }
+
+            <div className="ctrl-sep" />
+
+            <button className="btn btn-amber" onClick={resetVotes}>⟳ Archive &amp; Reset Votes</button>
+            <button className="btn btn-blue"  onClick={saveConfig} disabled={!dirty || saving}>
+              {saving ? 'Saving…' : '✓ Save Config'}
+            </button>
+
+            <div className="ctrl-right">
+              <span className="total-label">Total Votes: <span className="total-num">{totalVotes}</span></span>
+            </div>
+          </div>
+
+          <div className="grid">
+            {display.sections.map((section, s) => (
+              <SectionCard
+                key={s}
+                sectionIndex={s}
+                section={section}
+                voteCounts={votes[s] ?? [0, 0, 0]}
+                active={isActive}
+                onSectionName={updateSectionName}
+                onCandidateName={updateCandidateName}
+              />
+            ))}
+          </div>
+
+          <DevicesPanel devices={devices} />
+        </>
       )}
 
-      {/* Control bar */}
-      <div className="ctrl">
-        <span className={`badge ${isActive ? 'badge-active' : 'badge-stopped'}`}>
-          {isActive ? 'ACTIVE' : 'STOPPED'}
-        </span>
+      {/* ── HISTORY TAB ── */}
+      {tab === 'history' && <ElectionHistory />}
 
-        {!isActive
-          ? <button className="btn btn-green" onClick={() => setActive(true)}>▶ Start Election</button>
-          : <button className="btn btn-red"   onClick={() => setActive(false)}>⏹ Stop Election</button>
-        }
-
-        <div className="ctrl-sep" />
-
-        <button className="btn btn-amber" onClick={resetVotes}>⟳ Reset All Votes</button>
-        <button className="btn btn-blue"  onClick={saveConfig} disabled={!dirty || saving}>
-          {saving ? 'Saving…' : '✓ Save Config'}
-        </button>
-
-        <div className="ctrl-right">
-          <span className="total-label">Total Votes: <span className="total-num">{totalVotes}</span></span>
-        </div>
-      </div>
-
-      {/* 2×2 Section grid */}
-      <div className="grid">
-        {display.sections.map((section, s) => (
-          <SectionCard
-            key={s}
-            sectionIndex={s}
-            section={section}
-            voteCounts={votes[s] ?? [0, 0, 0]}
-            active={isActive}
-            onSectionName={updateSectionName}
-            onCandidateName={updateCandidateName}
-          />
-        ))}
-      </div>
-
-      {/* Connected terminals */}
-      <DevicesPanel devices={devices} />
-
-      {/* Footer */}
       <footer className="footer">
-        VTIC Voting Machine • Dashboard hosted on Vercel • Data live from Firebase Firestore
+        VTIC Voting Machine · Dashboard on Vercel · Data live from Firebase Firestore
       </footer>
 
-      {/* Toast */}
       {toast && (
         <div className={`toast ${toast.ok ? 'toast-ok' : 'toast-err'}`}>
           {toast.msg}
