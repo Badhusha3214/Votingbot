@@ -16,28 +16,20 @@ private:
 
   String ssid;
   String password;
+  String firebaseProject;
+  String firebaseApiKey;
 
   const byte DNS_PORT = 53;
 
   void handleRoot() {
+    // Build network options from last scan result
     int n = WiFi.scanComplete();
-    Serial.printf("[Portal] scanComplete() = %d\n", n);
-
-    if (n == WIFI_SCAN_RUNNING) {
-      serveScanningPage();
-      return;
-    }
-    if (n == WIFI_SCAN_FAILED) {
-      Serial.println("[Portal] Scan failed, restarting...");
-      WiFi.scanNetworks(true);
-      serveScanningPage();
-      return;
-    }
-
     String options = "<option value=''>-- Select network --</option>";
-    for (int i = 0; i < n; i++) {
-      String lock = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? " 🔓" : " 🔒";
-      options += "<option value='" + WiFi.SSID(i) + "'>" + WiFi.SSID(i) + lock + " (" + String(WiFi.RSSI(i)) + " dBm)</option>";
+    if (n > 0) {
+      for (int i = 0; i < n; i++) {
+        String lock = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? " 🔓" : " 🔒";
+        options += "<option value='" + WiFi.SSID(i) + "'>" + WiFi.SSID(i) + lock + " (" + String(WiFi.RSSI(i)) + " dBm)</option>";
+      }
     }
 
     String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'>";
@@ -48,22 +40,22 @@ private:
     html += "h2{margin-top:0;color:#1e293b;}";
     html += "label{display:block;margin-top:12px;font-size:13px;color:#475569;}";
     html += "input,select{width:100%;padding:10px;margin:4px 0 0;border:1px solid #cbd5e1;border-radius:6px;box-sizing:border-box;font-size:14px;}";
+    html += ".row{display:flex;gap:8px;margin-top:4px;}";
+    html += ".row input{margin:0;}";
     html += "button{width:100%;padding:12px;background:#1d4ed8;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer;margin-top:20px;font-size:15px;}";
     html += "button:hover{background:#1e40af;}";
     html += ".refresh{background:#475569;margin-top:8px;}";
     html += ".refresh:hover{background:#334155;}";
-    html += ".info{margin-top:14px;padding:10px;background:#f1f5f9;border-radius:6px;font-size:13px;color:#475569;}";
-    if (n == 0) html += ".warn{margin-top:10px;padding:10px;background:#fef9c3;border-radius:6px;font-size:13px;color:#713f12;}";
     html += "</style></head><body>";
     html += "<div class='card'><h2>VTIC WiFi Config</h2>";
-    if (n == 0) html += "<div class='warn'>No networks found. Use Rescan or type SSID manually.</div>";
     html += "<form action='/save' method='POST'>";
-    html += "<label>WiFi Network (" + String(n) + " found)</label>";
-    html += "<select name='ssid' id='ssid' onchange=\"document.getElementById('ssid_manual').value=this.value\">" + options + "</select>";
+    html += "<label>WiFi Network</label>";
+    html += "<select name='ssid' id='ssid' required onchange=\"document.getElementById('ssid_manual').value=this.value\">" + options + "</select>";
     html += "<label>Or type SSID manually</label>";
     html += "<input id='ssid_manual' name='ssid_manual' placeholder='Type SSID here' oninput=\"if(this.value){document.getElementById('ssid').value=''}\">";
     html += "<label>WiFi Password</label><input name='pass' type='password' placeholder='Leave blank if open'>";
-    html += "<div class='info'><b>Firebase Project:</b> " + String(DEFAULT_FIREBASE_PROJECT_ID) + "</div>";
+    html += "<label>Firebase Project ID</label><input name='project' value='" + firebaseProject + "' required>";
+    html += "<label>Firebase API Key</label><input name='apikey' value='" + firebaseApiKey + "' required>";
     html += "<button type='submit'>Save &amp; Restart</button>";
     html += "</form>";
     html += "<form action='/scan' method='GET'><button type='submit' class='refresh'>&#x21bb; Rescan Networks</button></form>";
@@ -71,32 +63,25 @@ private:
     server.send(200, "text/html", html);
   }
 
-  void serveScanningPage() {
-    String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'>";
-    html += "<meta http-equiv='refresh' content='3;url=/'>";
-    html += "<meta name='viewport' content='width=device-width,initial-scale=1'>";
-    html += "<title>Scanning...</title>";
-    html += "<style>body{font-family:sans-serif;background:#f1f5f9;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;}";
-    html += ".card{background:#fff;padding:32px;border-radius:10px;box-shadow:0 4px 6px rgba(0,0,0,0.05);text-align:center;color:#475569;}";
-    html += "h2{margin:0 0 8px;color:#1e293b;}p{margin:0;font-size:14px;}</style></head>";
-    html += "<body><div class='card'><h2>&#x21bb; Scanning...</h2><p>Please wait, searching for networks.</p></div></body></html>";
-    server.send(200, "text/html", html);
-  }
-
   void handleScan() {
     WiFi.scanDelete();
-    WiFi.scanNetworks(false); // blocking — results guaranteed before redirect
+    WiFi.scanNetworks(true);
+    // Brief wait so scan has a moment to start, then redirect back
     server.sendHeader("Location", "/");
-    server.send(302, "text/plain", "");
+    server.send(302, "text/plain", "Scanning...");
   }
 
   void handleSave() {
     ssid = server.arg("ssid_manual").length() > 0 ? server.arg("ssid_manual") : server.arg("ssid");
     password = server.arg("pass");
+    firebaseProject = server.arg("project");
+    firebaseApiKey = server.arg("apikey");
 
     prefs.begin("vtic-voting", false);
     prefs.putString("ssid", ssid);
     prefs.putString("password", password);
+    prefs.putString("project", firebaseProject);
+    prefs.putString("apikey", firebaseApiKey);
     prefs.end();
 
     String html = "<html><body><h2>Configuration saved!</h2><p>Terminal is restarting to connect. You can close this window.</p></body></html>";
@@ -112,6 +97,8 @@ public:
     prefs.begin("vtic-voting", true);
     ssid = prefs.getString("ssid", "");
     password = prefs.getString("password", "");
+    firebaseProject = prefs.getString("project", DEFAULT_FIREBASE_PROJECT_ID);
+    firebaseApiKey = prefs.getString("apikey", DEFAULT_FIREBASE_API_KEY);
     prefs.end();
   }
 
@@ -120,24 +107,16 @@ public:
   }
 
   String getSSID() { return ssid; }
-  String getFirebaseProject() { return DEFAULT_FIREBASE_PROJECT_ID; }
-  String getFirebaseApiKey()  { return DEFAULT_FIREBASE_API_KEY; }
+  String getFirebaseProject() { return firebaseProject; }
+  String getFirebaseApiKey() { return firebaseApiKey; }
 
   void startPortal() {
     configMode = true;
-
-    // Cleanly reset WiFi — critical when called after a failed connect() attempt
-    // which leaves the STA interface busy and blocks scanning
-    WiFi.disconnect(true);
-    WiFi.mode(WIFI_OFF);
-    delay(200);
-
     WiFi.mode(WIFI_AP_STA);
     WiFi.softAP("VTIC-VOTING-SETUP");
-    delay(500); // let AP fully initialize before scanning
 
-    Serial.println("[Portal] Starting WiFi scan...");
-    WiFi.scanNetworks(true); // async; waitForScan() in setup() waits for it
+    // Scan before starting the AP so networks are ready on first page load
+    WiFi.scanNetworks(true);
 
     dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
 
@@ -147,7 +126,6 @@ public:
     server.onNotFound(std::bind(&WifiManager::handleRoot, this));
 
     server.begin();
-    Serial.println("[Portal] Captive portal running at " + WiFi.softAPIP().toString());
   }
 
   void handlePortal() {
@@ -157,20 +135,12 @@ public:
     }
   }
 
+  // Call once after startPortal() — waits for the async scan to finish
   void waitForScan() {
-    Serial.println("[Portal] Waiting for scan...");
     unsigned long start = millis();
     while (WiFi.scanComplete() == WIFI_SCAN_RUNNING && millis() - start < 10000) {
       delay(100);
     }
-    int n = WiFi.scanComplete();
-    if (n == WIFI_SCAN_FAILED) {
-      Serial.println("[Portal] Initial scan failed, retrying with blocking scan...");
-      delay(300);
-      WiFi.scanNetworks(false);
-      n = WiFi.scanComplete();
-    }
-    Serial.printf("[Portal] Scan done: %d network(s) found\n", n);
   }
 
   bool connect() {
@@ -178,7 +148,7 @@ public:
 
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid.c_str(), password.c_str());
-
+    
     int retries = 0;
     while (WiFi.status() != WL_CONNECTED && retries < 30) {
       delay(500);

@@ -7,8 +7,7 @@
 
 struct Section {
   String name;
-  String candidates[MAX_CANDIDATES_PER_SECTION];
-  int    numCandidates;
+  String candidates[CANDIDATES_PER_SECTION];
 };
 
 class ElectionConfig {
@@ -17,19 +16,16 @@ public:
   bool     active;
 
   ElectionConfig() : active(false) {
-    const char* defaultNames[]  = { "Head Boy", "Head Girl", "House Leader", "Sports Captain", "Section 5", "Section 6" };
-    const int   defaultCounts[] = { 3, 3, 3, 3, 2, 2 };
+    const char* defaultNames[] = { "Head Boy", "Head Girl", "House Leader", "Sports Captain" };
     for (int s = 0; s < NUM_SECTIONS; s++) {
-      sections[s].name          = defaultNames[s];
-      sections[s].numCandidates = defaultCounts[s];
-      for (int c = 0; c < sections[s].numCandidates; c++) {
+      sections[s].name = defaultNames[s];
+      for (int c = 0; c < CANDIDATES_PER_SECTION; c++) {
         sections[s].candidates[c] = "Candidate " + String(c + 1);
       }
     }
   }
 
   void begin() {
-    const int defaultCounts[] = { 3, 3, 3, 3, 2, 2 };
     Preferences prefs;
     prefs.begin("vtic-cfg", true);
     active = prefs.getBool("active", false);
@@ -37,9 +33,7 @@ public:
       char key[12];
       snprintf(key, sizeof(key), "sn%d", s);
       sections[s].name = prefs.getString(key, sections[s].name);
-      snprintf(key, sizeof(key), "snc%d", s);
-      sections[s].numCandidates = prefs.getInt(key, defaultCounts[s]);
-      for (int c = 0; c < sections[s].numCandidates; c++) {
+      for (int c = 0; c < CANDIDATES_PER_SECTION; c++) {
         snprintf(key, sizeof(key), "s%dc%d", s, c);
         sections[s].candidates[c] = prefs.getString(key, sections[s].candidates[c]);
       }
@@ -55,9 +49,7 @@ public:
       char key[12];
       snprintf(key, sizeof(key), "sn%d", s);
       prefs.putString(key, sections[s].name);
-      snprintf(key, sizeof(key), "snc%d", s);
-      prefs.putInt(key, sections[s].numCandidates);
-      for (int c = 0; c < sections[s].numCandidates; c++) {
+      for (int c = 0; c < CANDIDATES_PER_SECTION; c++) {
         snprintf(key, sizeof(key), "s%dc%d", s, c);
         prefs.putString(key, sections[s].candidates[c]);
       }
@@ -70,11 +62,10 @@ public:
     doc["active"] = active;
     JsonArray arr = doc.createNestedArray("sections");
     for (int s = 0; s < NUM_SECTIONS; s++) {
-      JsonObject obj       = arr.createNestedObject();
-      obj["name"]          = sections[s].name;
-      obj["numCandidates"] = sections[s].numCandidates;
-      JsonArray cands      = obj.createNestedArray("candidates");
-      for (int c = 0; c < sections[s].numCandidates; c++) {
+      JsonObject obj  = arr.createNestedObject();
+      obj["name"]     = sections[s].name;
+      JsonArray cands = obj.createNestedArray("candidates");
+      for (int c = 0; c < CANDIDATES_PER_SECTION; c++) {
         cands.add(sections[s].candidates[c]);
       }
     }
@@ -91,10 +82,8 @@ public:
       JsonArray arr = doc["sections"].as<JsonArray>();
       for (int s = 0; s < NUM_SECTIONS && s < (int)arr.size(); s++) {
         sections[s].name = arr[s]["name"].as<String>();
-        if (arr[s].containsKey("numCandidates"))
-          sections[s].numCandidates = arr[s]["numCandidates"].as<int>();
-        JsonArray cands = arr[s]["candidates"].as<JsonArray>();
-        for (int c = 0; c < sections[s].numCandidates && c < (int)cands.size(); c++) {
+        JsonArray cands  = arr[s]["candidates"].as<JsonArray>();
+        for (int c = 0; c < CANDIDATES_PER_SECTION && c < (int)cands.size(); c++) {
           sections[s].candidates[c] = cands[c].as<String>();
         }
       }

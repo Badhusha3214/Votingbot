@@ -12,16 +12,6 @@ private:
   String apiKey;
   WiFiClientSecure client;
 
-  // Prepare client and http for a new request.
-  // client.stop() clears any stuck SSL state from a previous failure.
-  void prepareHttp(HTTPClient& http, const String& url) {
-    client.stop();
-    client.setInsecure();
-    http.begin(client, url);
-    http.setConnectTimeout(3000); // 3 s connect timeout
-    http.setTimeout(5000);        // 5 s response timeout
-  }
-
 public:
   FirebaseSync() { client.setInsecure(); }
 
@@ -31,13 +21,14 @@ public:
   }
 
   // Upload a ballot: selected[s] = candidate index for section s.
+  // Stored in Firestore `votes/` collection.
   bool uploadVote(int selected[NUM_SECTIONS], String deviceId) {
     if (WiFi.status() != WL_CONNECTED) return false;
 
     HTTPClient http;
     String url = "https://firestore.googleapis.com/v1/projects/" + projectId
                + "/databases/(default)/documents/votes?key=" + apiKey;
-    prepareHttp(http, url);
+    http.begin(client, url);
     http.addHeader("Content-Type", "application/json");
 
     StaticJsonDocument<512> doc;
@@ -53,46 +44,31 @@ public:
     serializeJson(doc, payload);
     int code = http.POST(payload);
     http.end();
-    Serial.printf("[Firebase] uploadVote HTTP %d\n", code);
     return code == 200 || code == 201;
   }
 
   // Fetch election active state from Firestore `config/election`.
+  // Returns the stored value, or `fallback` on any error.
   bool fetchElectionActive(bool fallback = false) {
-    if (WiFi.status() != WL_CONNECTED) {
-      Serial.println("[Firebase] fetchElectionActive: WiFi not connected");
-      return fallback;
-    }
+    if (WiFi.status() != WL_CONNECTED) return fallback;
 
     HTTPClient http;
     String url = "https://firestore.googleapis.com/v1/projects/" + projectId
-               + "/databases/(default)/documents/config/election"
-               + "?mask.fieldPaths=active&key=" + apiKey;
-    prepareHttp(http, url);
+               + "/databases/(default)/documents/config/election?key=" + apiKey;
+    http.begin(client, url);
     int code = http.GET();
-    Serial.printf("[Firebase] fetchElectionActive HTTP %d\n", code);
-
-    if (code != 200) {
-      if (code > 0) Serial.println("[Firebase] Error: " + http.getString());
-      http.end();
-      return fallback;
-    }
+    if (code != 200) { http.end(); return fallback; }
 
     String body = http.getString();
     http.end();
 
-    DynamicJsonDocument res(256);
-    if (deserializeJson(res, body) != DeserializationError::Ok) {
-      Serial.println("[Firebase] JSON parse failed");
-      return fallback;
-    }
+    DynamicJsonDocument res(1024);
+    if (deserializeJson(res, body) != DeserializationError::Ok) return fallback;
 
+    // Firestore REST format: { "fields": { "active": { "booleanValue": true } } }
     if (res["fields"]["active"]["booleanValue"].is<bool>()) {
-      bool val = res["fields"]["active"]["booleanValue"].as<bool>();
-      Serial.printf("[Firebase] active = %s\n", val ? "true" : "false");
-      return val;
+      return res["fields"]["active"]["booleanValue"].as<bool>();
     }
-    Serial.println("[Firebase] active field not found");
     return fallback;
   }
 
@@ -108,7 +84,7 @@ public:
       + "&updateMask.fieldPaths=pendingVotes&updateMask.fieldPaths=ipAddress"
       + "&updateMask.fieldPaths=ssid&key=" + apiKey;
 
-    prepareHttp(http, patchUrl);
+    http.begin(client, patchUrl);
     http.addHeader("Content-Type", "application/json");
 
     StaticJsonDocument<400> doc;
@@ -128,13 +104,12 @@ public:
       // Document doesn't exist yet — create it
       String createUrl = "https://firestore.googleapis.com/v1/projects/" + projectId
         + "/databases/(default)/documents/devices?documentId=" + deviceId + "&key=" + apiKey;
-      prepareHttp(http, createUrl);
+      http.begin(client, createUrl);
       http.addHeader("Content-Type", "application/json");
       code = http.POST(payload);
       http.end();
     }
 
-    Serial.printf("[Firebase] uploadTelemetry HTTP %d\n", code);
     return code == 200 || code == 201;
   }
 };

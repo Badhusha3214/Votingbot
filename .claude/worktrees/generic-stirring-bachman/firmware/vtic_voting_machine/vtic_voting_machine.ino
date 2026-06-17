@@ -13,13 +13,13 @@ enum SystemState {
   STATE_SUBMITTING,
   STATE_VOTE_SUCCESS,
   STATE_VOTE_FAILED,
-  STATE_COOLDOWN,
+  STATE_COOLDOWN
 };
 
 SystemState currentState = STATE_READY;
 
 // ── Per-section candidate selection (-1 = nothing chosen) ─────────────────
-int selectedCandidate[NUM_SECTIONS] = { -1, -1, -1, -1, -1, -1 };
+int selectedCandidate[NUM_SECTIONS] = { -1, -1, -1, -1 };
 
 // ── Election active state (fetched from Firestore, cached in NVS) ──────────
 bool electionActive = false;
@@ -42,47 +42,33 @@ bool loadActiveState() {
 // ── Button table ───────────────────────────────────────────────────────────
 struct Button {
   int  pin;
-  int  section;
-  int  candidate;
+  int  section;    // 0-3, -1 for control
+  int  candidate;  // 0-2, -1 for control
   bool isReset;
   bool isConfig;
-  bool isSubmit;
   bool lastState;
-  unsigned long lastPressTime;
+  unsigned long lastDebounce;
 };
 
 Button buttons[] = {
-  // Section 1 — 3 candidates
-  { BTN_S1_1, 0, 0, false, false, false, HIGH, 0 },
-  { BTN_S1_2, 0, 1, false, false, false, HIGH, 0 },
-  { BTN_S1_3, 0, 2, false, false, false, HIGH, 0 },
+  { BTN_S1_1, 0, 0, false, false, HIGH, 0 },
+  { BTN_S1_2, 0, 1, false, false, HIGH, 0 },
+  { BTN_S1_3, 0, 2, false, false, HIGH, 0 },
 
-  // Section 2 — 3 candidates
-  { BTN_S2_1, 1, 0, false, false, false, HIGH, 0 },
-  { BTN_S2_2, 1, 1, false, false, false, HIGH, 0 },
-  { BTN_S2_3, 1, 2, false, false, false, HIGH, 0 },
+  { BTN_S2_1, 1, 0, false, false, HIGH, 0 },
+  { BTN_S2_2, 1, 1, false, false, HIGH, 0 },
+  { BTN_S2_3, 1, 2, false, false, HIGH, 0 },
 
-  // Section 3 — 3 candidates
-  { BTN_S3_1, 2, 0, false, false, false, HIGH, 0 },
-  { BTN_S3_2, 2, 1, false, false, false, HIGH, 0 },
-  { BTN_S3_3, 2, 2, false, false, false, HIGH, 0 },
+  { BTN_S3_1, 2, 0, false, false, HIGH, 0 },
+  { BTN_S3_2, 2, 1, false, false, HIGH, 0 },
+  { BTN_S3_3, 2, 2, false, false, HIGH, 0 },
 
-  // Section 4 — 3 candidates
-  { BTN_S4_1, 3, 0, false, false, false, HIGH, 0 },
-  { BTN_S4_2, 3, 1, false, false, false, HIGH, 0 },
-  { BTN_S4_3, 3, 2, false, false, false, HIGH, 0 },
+  { BTN_S4_1, 3, 0, false, false, HIGH, 0 },
+  { BTN_S4_2, 3, 1, false, false, HIGH, 0 },
+  { BTN_S4_3, 3, 2, false, false, HIGH, 0 },
 
-  // Section 5 — 2 candidates (input-only pins, external pull-up required)
-  { BTN_S5_1, 4, 0, false, false, false, HIGH, 0 },
-  { BTN_S5_2, 4, 1, false, false, false, HIGH, 0 },
-
-  // Section 6 — 2 candidates (input-only pins, external pull-up required)
-  { BTN_S6_1, 5, 0, false, false, false, HIGH, 0 },
-  { BTN_S6_2, 5, 1, false, false, false, HIGH, 0 },
-
-  { BTN_RESET,  -1, -1, true,  false, false, HIGH, 0 },
-  { BTN_CONFIG, -1, -1, false, true,  false, HIGH, 0 },
-  { BTN_SUBMIT, -1, -1, false, false, true,  HIGH, 0 },
+  { BTN_RESET,  -1, -1, true,  false, HIGH, 0 },
+  { BTN_CONFIG, -1, -1, false, true,  HIGH, 0 },
 };
 const int TOTAL_BUTTONS = sizeof(buttons) / sizeof(buttons[0]);
 
@@ -97,29 +83,27 @@ unsigned long lastTelemetryTime    = 0;
 unsigned long configPressStartTime = 0;
 bool          configHeld           = false;
 
-// ── LED (single red LED on ARGB_PIN) ──────────────────────────────────────
-// Blink patterns convey state since there's only one colour.
-void setLED(bool on) {
-  digitalWrite(ARGB_PIN, on ? HIGH : LOW);
+// ── RGB LED ────────────────────────────────────────────────────────────────
+void setRGB(int r, int g, int b) {
+  analogWrite(RGB_RED_PIN,   r);
+  analogWrite(RGB_GREEN_PIN, g);
+  analogWrite(RGB_BLUE_PIN,  b);
 }
 
 void updateLED() {
   switch (currentState) {
-    case STATE_READY:        setLED(electionActive); break; // on=active, off=stopped
-    case STATE_SUBMITTING:   setLED(true);  break;
-    case STATE_VOTE_SUCCESS: setLED(true);  break;
-    case STATE_VOTE_FAILED:  setLED(false); break;
+    case STATE_INITIAL_SETUP: setRGB(128,   0, 128); break; // Purple
+    case STATE_READY:
+      setRGB(electionActive ? 0 : 255,
+             electionActive ? 255 : 140,
+             0); // Green = active, Amber = stopped
+      break;
+    case STATE_SUBMITTING:   setRGB(255, 255,   0); break; // Yellow
+    case STATE_VOTE_SUCCESS: setRGB(  0,   0, 255); break; // Blue
+    case STATE_VOTE_FAILED:  setRGB(255,   0,   0); break; // Red
     default: break;
   }
 }
-
-// ── Buzzer ─────────────────────────────────────────────────────────────────
-void beepSelect()  { tone(BUZZER_PIN, 1000,  80); }
-void beepReady()   { tone(BUZZER_PIN, 1200, 120); delay(200); tone(BUZZER_PIN, 1200, 120); }
-void beepSuccess() { tone(BUZZER_PIN, 1500, 500); }
-void beepFailed()  { tone(BUZZER_PIN,  300, 600); }
-void beepError()   { tone(BUZZER_PIN,  400, 100); delay(150); tone(BUZZER_PIN, 400, 100); delay(150); tone(BUZZER_PIN, 400, 100); }
-void beepReset()   { tone(BUZZER_PIN,  600,  80); }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 bool allSelected() {
@@ -177,33 +161,12 @@ void setup() {
   Serial.begin(115200);
   Serial.println("\nStarting VTIC Smart Election Terminal...");
 
-  pinMode(ARGB_PIN, OUTPUT);
-  pinMode(BUZZER_PIN, OUTPUT);
-  digitalWrite(BUZZER_PIN, LOW);
-
-  // Startup LED test — 3 quick blinks
-  for (int i = 0; i < 3; i++) {
-    setLED(true);  delay(150);
-    setLED(false); delay(150);
-  }
-  tone(BUZZER_PIN, 1000, 150); // startup beep
+  pinMode(RGB_RED_PIN,   OUTPUT);
+  pinMode(RGB_GREEN_PIN, OUTPUT);
+  pinMode(RGB_BLUE_PIN,  OUTPUT);
 
   for (int i = 0; i < TOTAL_BUTTONS; i++) {
-    // GPIOs 34–39 are input-only and don't support INPUT_PULLUP;
-    // wire a 10kΩ resistor from each of those pins to 3.3V.
-    if (buttons[i].pin >= 34 && buttons[i].pin <= 39) {
-      pinMode(buttons[i].pin, INPUT);
-    } else {
-      pinMode(buttons[i].pin, INPUT_PULLUP);
-    }
-  }
-
-  // Read actual pin states now so lastState is correct from the start.
-  // Without this, floating input-only pins (34-39) read LOW on first loop
-  // and trigger a false "press", auto-selecting S5/S6 candidates.
-  delay(10); // let pins settle after pinMode
-  for (int i = 0; i < TOTAL_BUTTONS; i++) {
-    buttons[i].lastState = digitalRead(buttons[i].pin);
+    pinMode(buttons[i].pin, INPUT_PULLUP);
   }
 
   macAddress = WiFi.macAddress();
@@ -223,35 +186,19 @@ void setup() {
     if (wifiManager.connect()) {
       Serial.print("Connected. IP: ");
       Serial.println(WiFi.localIP());
-      Serial.println("Dashboard: https://votingbot.vercel.app");
+      Serial.println("Dashboard: https://your-app.vercel.app");
 
       configTime(19800, 0, "pool.ntp.org", "time.nist.gov"); // IST UTC+5:30
-
-      // Wait for NTP sync — SSL handshake fails if clock is still at 1970
-      Serial.print("Waiting for NTP...");
-      time_t now = time(nullptr);
-      int ntpTries = 0;
-      while (now < 100000 && ntpTries < 20) {
-        delay(500);
-        now = time(nullptr);
-        ntpTries++;
-        Serial.print(".");
-      }
-      Serial.println(now > 100000 ? " OK" : " timed out, proceeding anyway");
 
       firebaseSync.begin(wifiManager.getFirebaseProject(),
                          wifiManager.getFirebaseApiKey());
 
       syncElectionState();  // fetch live active state from Firestore
       sendTelemetry();
-      updateLED();
     } else {
-      Serial.println("WiFi failed. Launching setup portal to reconfigure...");
-      currentState = STATE_INITIAL_SETUP;
-      updateLED();
-      wifiManager.startPortal();
-      wifiManager.waitForScan();
+      Serial.println("WiFi failed. Offline mode — using cached election state.");
     }
+    updateLED();
   } else {
     Serial.println("No WiFi credentials. Launching setup portal...");
     currentState = STATE_INITIAL_SETUP;
@@ -264,7 +211,6 @@ void setup() {
 // ── Loop ───────────────────────────────────────────────────────────────────
 void loop() {
   if (currentState == STATE_INITIAL_SETUP) {
-    setLED((millis() / 200) % 2 == 0); // fast blink during WiFi setup
     wifiManager.handlePortal();
     return;
   }
@@ -276,49 +222,41 @@ void loop() {
     Button& btn = buttons[i];
     int reading = digitalRead(btn.pin);
 
-    // Falling edge: button just pressed (200ms per-button debounce)
-    if (reading == LOW && btn.lastState == HIGH
-        && (now - btn.lastPressTime) > 200) {
-      btn.lastPressTime = now;
+    if (reading != btn.lastState) btn.lastDebounce = now;
 
-      if (btn.isConfig) {
-        configHeld           = true;
-        configPressStartTime = now;
+    if ((now - btn.lastDebounce) > BUTTON_DEBOUNCE_MS) {
+      // Falling edge: button just pressed
+      if (reading == LOW && btn.lastState == HIGH) {
 
-      } else if (btn.isReset && currentState == STATE_READY) {
-        resetSelections();
-        beepReset();
-        Serial.println("Selections cleared by Reset button.");
+        if (btn.isConfig) {
+          configHeld           = true;
+          configPressStartTime = now;
 
-      } else if (btn.isSubmit && currentState == STATE_READY && electionActive) {
-        if (allSelected()) {
-          currentState    = STATE_SUBMITTING;
-          stateChangeTime = now;
-          updateLED();
-          Serial.println("Submit pressed. Casting ballot...");
-        } else {
-          beepError();
-          Serial.println("Submit pressed but not all sections selected.");
-        }
+        } else if (btn.isReset && currentState == STATE_READY) {
+          resetSelections();
+          Serial.println("Selections cleared by Reset button.");
 
-      } else if (!btn.isReset && !btn.isConfig && !btn.isSubmit
-                 && currentState == STATE_READY
-                 && electionActive) {
-        selectedCandidate[btn.section] = btn.candidate;
-        Serial.printf("Section %d → Candidate %d\n", btn.section, btn.candidate);
-        beepSelect();
-        if (allSelected()) {
-          beepReady();
-          Serial.println("All sections selected. Press Submit to cast ballot.");
+        } else if (!btn.isReset && !btn.isConfig
+                   && currentState == STATE_READY
+                   && electionActive) {
+          // Voting button
+          selectedCandidate[btn.section] = btn.candidate;
+          Serial.printf("Section %d → Candidate %d\n", btn.section, btn.candidate);
+
+          if (allSelected()) {
+            currentState    = STATE_SUBMITTING;
+            stateChangeTime = now;
+            updateLED();
+            Serial.println("All sections selected. Submitting ballot...");
+          }
         }
       }
-    }
 
-    // Rising edge: config button released
-    if (reading == HIGH && btn.lastState == LOW && btn.isConfig) {
-      configHeld = false;
+      // Rising edge: config button released
+      if (reading == HIGH && btn.lastState == LOW && btn.isConfig) {
+        configHeld = false;
+      }
     }
-
     btn.lastState = reading;
   }
 
@@ -326,7 +264,7 @@ void loop() {
   if (configHeld && (now - configPressStartTime) > CONFIG_HOLD_TIME_MS) {
     Serial.println("Config hold. Resetting WiFi credentials...");
     wifiManager.resetCredentials();
-    setLED(true);
+    setRGB(128, 0, 128);
     delay(1000);
     ESP.restart();
   }
@@ -338,12 +276,10 @@ void loop() {
       bool ok = firebaseSync.uploadVote(selectedCandidate, macAddress);
       if (ok) {
         currentState = STATE_VOTE_SUCCESS;
-        beepSuccess();
         Serial.println("Ballot uploaded to Firebase.");
       } else {
         offlineQueue.enqueue(selectedCandidate);
         currentState = STATE_VOTE_FAILED;
-        beepFailed();
         Serial.println("Firebase unavailable. Ballot queued offline.");
       }
       updateLED();
@@ -361,7 +297,7 @@ void loop() {
 
     case STATE_COOLDOWN: {
       bool ledOn = ((now - stateChangeTime) / 500) % 2 == 0;
-      setLED(ledOn); // Blinking during cooldown
+      setRGB(ledOn ? 255 : 0, ledOn ? 165 : 0, 0); // Blinking amber
       if (now - stateChangeTime >= COOLDOWN_TIME_MS) {
         resetSelections();
         currentState = STATE_READY;

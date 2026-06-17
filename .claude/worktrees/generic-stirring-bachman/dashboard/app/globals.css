@@ -17,8 +17,6 @@
   --c1:        #10b981;
   --c2:        #f59e0b;
   --c3:        #8b5cf6;
-  --c4:        #ef4444;
-  --c5:        #14b8a6;
 }
 
 body {
@@ -143,8 +141,6 @@ body {
 .s1 .card-stripe { background: linear-gradient(90deg, #10b981, #84cc16); }
 .s2 .card-stripe { background: linear-gradient(90deg, #f59e0b, #f97316); }
 .s3 .card-stripe { background: linear-gradient(90deg, #8b5cf6, #ec4899); }
-.s4 .card-stripe { background: linear-gradient(90deg, #ef4444, #f43f5e); }
-.s5 .card-stripe { background: linear-gradient(90deg, #14b8a6, #0ea5e9); }
 
 .card-hdr {
   padding: 14px 18px 10px;
@@ -182,8 +178,6 @@ body {
 .s1 .cand-bullet { background: var(--c1); }
 .s2 .cand-bullet { background: var(--c2); }
 .s3 .cand-bullet { background: var(--c3); }
-.s4 .cand-bullet { background: var(--c4); }
-.s5 .cand-bullet { background: var(--c5); }
 
 .cand-input {
   background: transparent; border: none;
@@ -204,8 +198,6 @@ body {
 .s1 .bar-fill { background: linear-gradient(90deg, var(--c1), #84cc16); }
 .s2 .bar-fill { background: linear-gradient(90deg, var(--c2), #f97316); }
 .s3 .bar-fill { background: linear-gradient(90deg, var(--c3), #ec4899); }
-.s4 .bar-fill { background: linear-gradient(90deg, var(--c4), #f43f5e); }
-.s5 .bar-fill { background: linear-gradient(90deg, var(--c5), #0ea5e9); }
 
 /* ── Devices panel ───────────────────────────────────── */
 .devices {

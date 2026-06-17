@@ -88,8 +88,6 @@ a{color:inherit;text-decoration:none}
 .s1 .card-stripe{background:linear-gradient(90deg,#10b981,#84cc16)}
 .s2 .card-stripe{background:linear-gradient(90deg,#f59e0b,#f97316)}
 .s3 .card-stripe{background:linear-gradient(90deg,#8b5cf6,#ec4899)}
-.s4 .card-stripe{background:linear-gradient(90deg,#ef4444,#f43f5e)}
-.s5 .card-stripe{background:linear-gradient(90deg,#14b8a6,#0ea5e9)}
 .card-hdr{padding:14px 18px 10px;display:flex;align-items:flex-start;gap:12px}
 .card-num{font-size:10px;color:#64748b;font-weight:700;letter-spacing:1px;
   background:#0f172a;border-radius:4px;padding:2px 7px;margin-top:2px;flex-shrink:0}
@@ -112,8 +110,6 @@ a{color:inherit;text-decoration:none}
 .s1 .cand-bullet{background:#10b981}
 .s2 .cand-bullet{background:#f59e0b}
 .s3 .cand-bullet{background:#8b5cf6}
-.s4 .cand-bullet{background:#ef4444}
-.s5 .cand-bullet{background:#14b8a6}
 .cand-input{background:transparent;border:none;font-size:13px;color:#cbd5e1;
   flex:1;outline:none;cursor:text;min-width:0;border-bottom:1px solid transparent;
   transition:.15s border-color}
@@ -133,8 +129,6 @@ a{color:inherit;text-decoration:none}
 .s1 .bar-fill{background:linear-gradient(90deg,#10b981,#84cc16)}
 .s2 .bar-fill{background:linear-gradient(90deg,#f59e0b,#f97316)}
 .s3 .bar-fill{background:linear-gradient(90deg,#8b5cf6,#ec4899)}
-.s4 .bar-fill{background:linear-gradient(90deg,#ef4444,#f43f5e)}
-.s5 .bar-fill{background:linear-gradient(90deg,#14b8a6,#0ea5e9)}
 
 /* ── Footer ── */
 .footer{text-align:center;padding:20px;color:#334155;font-size:12px}
@@ -207,15 +201,13 @@ a{color:inherit;text-decoration:none}
 let cfg = {
   active: false,
   sections: [
-    {name:"Head Boy",      numCandidates:3, candidates:["Candidate 1","Candidate 2","Candidate 3"]},
-    {name:"Head Girl",     numCandidates:3, candidates:["Candidate 1","Candidate 2","Candidate 3"]},
-    {name:"House Leader",  numCandidates:3, candidates:["Candidate 1","Candidate 2","Candidate 3"]},
-    {name:"Sports Captain",numCandidates:3, candidates:["Candidate 1","Candidate 2","Candidate 3"]},
-    {name:"Section 5",     numCandidates:2, candidates:["Candidate 1","Candidate 2"]},
-    {name:"Section 6",     numCandidates:2, candidates:["Candidate 1","Candidate 2"]}
+    {name:"Head Boy",      candidates:["Candidate 1","Candidate 2","Candidate 3"]},
+    {name:"Head Girl",     candidates:["Candidate 1","Candidate 2","Candidate 3"]},
+    {name:"House Leader",  candidates:["Candidate 1","Candidate 2","Candidate 3"]},
+    {name:"Sports Captain",candidates:["Candidate 1","Candidate 2","Candidate 3"]}
   ]
 };
-let votes = [[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0],[0,0]];
+let votes = [[0,0,0],[0,0,0],[0,0,0],[0,0,0]];
 let dirty = false;
 let polling = null;
 
@@ -245,13 +237,13 @@ function renderGrid(){
   const grid=document.getElementById('grid');
   const active=cfg.active;
   let html='';
-  for(let s=0;s<cfg.sections.length;s++){
-    const sec=cfg.sections[s]||{name:'Section '+(s+1),numCandidates:s<4?3:2,candidates:['Candidate 1','Candidate 2','Candidate 3']};
-    const sv=votes[s]||[];
+  for(let s=0;s<4;s++){
+    const sec=cfg.sections[s]||{name:'Section '+(s+1),candidates:['Candidate 1','Candidate 2','Candidate 3']};
+    const sv=votes[s]||[0,0,0];
     const total=sv.reduce((a,b)=>a+b,0);
 
     let rows='';
-    for(let c=0;c<sec.candidates.length;c++){
+    for(let c=0;c<3;c++){
       const v=sv[c]||0;
       const pct=total>0?Math.round(v/total*100):0;
       const barW=total>0?Math.max(pct,2):2;

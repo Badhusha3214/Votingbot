@@ -16,8 +16,6 @@ const DEFAULTS = {
     { name: 'Head Girl',      candidates: ['Candidate 1', 'Candidate 2', 'Candidate 3'] },
     { name: 'House Leader',   candidates: ['Candidate 1', 'Candidate 2', 'Candidate 3'] },
     { name: 'Sports Captain', candidates: ['Candidate 1', 'Candidate 2', 'Candidate 3'] },
-    { name: 'Section 5',      candidates: ['Candidate 1', 'Candidate 2'] },
-    { name: 'Section 6',      candidates: ['Candidate 1', 'Candidate 2'] },
   ],
 };
 
@@ -26,18 +24,16 @@ const STRIPE_COLORS = [
   ['#10b981', '#84cc16'],
   ['#f59e0b', '#f97316'],
   ['#8b5cf6', '#ec4899'],
-  ['#ef4444', '#f43f5e'],
-  ['#14b8a6', '#0ea5e9'],
 ];
 
 function clone(obj) { return JSON.parse(JSON.stringify(obj)); }
 
 // ── Vote-count aggregation from raw Firestore docs ───────────────────────────
 function aggregateVotes(docs) {
-  const counts = Array.from({ length: 6 }, () => [0, 0, 0]);
+  const counts = Array.from({ length: 4 }, () => [0, 0, 0]);
   docs.forEach(d => {
     const data = d.data();
-    for (let s = 0; s < 6; s++) {
+    for (let s = 0; s < 4; s++) {
       const c = data[`section${s}`];
       if (typeof c === 'number' && c >= 0 && c < 3) counts[s][c]++;
     }
@@ -251,7 +247,7 @@ function ElectionHistory() {
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const [cfg,     setCfg]     = useState(null);
-  const [votes,   setVotes]   = useState([[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0]]);
+  const [votes,   setVotes]   = useState([[0,0,0],[0,0,0],[0,0,0],[0,0,0]]);
   const [devices, setDevices] = useState([]);
   const [fbError, setFbError] = useState(null);
   const [tab,     setTab]     = useState('live');   // 'live' | 'history'
@@ -269,21 +265,7 @@ export default function Dashboard() {
       doc(db, 'config', 'election'),
       snap => {
         if (snap.exists()) {
-          const data = snap.data();
-          // If Firestore has fewer sections than the current layout, add the missing ones
-          if ((data.sections?.length ?? 0) < DEFAULTS.sections.length) {
-            const merged = {
-              ...data,
-              sections: [
-                ...data.sections,
-                ...DEFAULTS.sections.slice(data.sections.length),
-              ],
-            };
-            setDoc(doc(db, 'config', 'election'), merged).catch(() => {});
-            setCfg(merged);
-          } else {
-            setCfg(data);
-          }
+          setCfg(snap.data());
         } else {
           setDoc(doc(db, 'config', 'election'), DEFAULTS).catch(() => {});
           setCfg(DEFAULTS);

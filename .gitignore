@@ -1,0 +1,18 @@
+# Environment variables — never commit real credentials
+.env
+.env.local
+.env.*.local
+
+# Next.js
+dashboard/.next/
+dashboard/node_modules/
+dashboard/out/
+
+# Arduino build artifacts
+build/
+*.bin
+*.elf
+
+# OS
+.DS_Store
+Thumbs.db

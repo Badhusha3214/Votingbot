@@ -7,7 +7,7 @@
 
 class VoteTracker {
 public:
-  int votes[NUM_SECTIONS][MAX_CANDIDATES_PER_SECTION];
+  int votes[NUM_SECTIONS][CANDIDATES_PER_SECTION];
 
   VoteTracker() {
     memset(votes, 0, sizeof(votes));
@@ -17,7 +17,7 @@ public:
     Preferences prefs;
     prefs.begin("vtic-votes", true);
     for (int s = 0; s < NUM_SECTIONS; s++) {
-      for (int c = 0; c < MAX_CANDIDATES_PER_SECTION; c++) {
+      for (int c = 0; c < CANDIDATES_PER_SECTION; c++) {
         char key[8];
         snprintf(key, sizeof(key), "v%d_%d", s, c);
         votes[s][c] = prefs.getInt(key, 0);
@@ -30,7 +30,7 @@ public:
     Preferences prefs;
     prefs.begin("vtic-votes", false);
     for (int s = 0; s < NUM_SECTIONS; s++) {
-      for (int c = 0; c < MAX_CANDIDATES_PER_SECTION; c++) {
+      for (int c = 0; c < CANDIDATES_PER_SECTION; c++) {
         char key[8];
         snprintf(key, sizeof(key), "v%d_%d", s, c);
         prefs.putInt(key, votes[s][c]);
@@ -43,7 +43,7 @@ public:
   void castBallot(int selected[NUM_SECTIONS]) {
     for (int s = 0; s < NUM_SECTIONS; s++) {
       int c = selected[s];
-      if (c >= 0 && c < MAX_CANDIDATES_PER_SECTION) {
+      if (c >= 0 && c < CANDIDATES_PER_SECTION) {
         votes[s][c]++;
       }
     }
@@ -53,7 +53,7 @@ public:
   // Cast a single vote for one candidate in one section (used from dashboard)
   bool castVote(int section, int candidate) {
     if (section < 0 || section >= NUM_SECTIONS)         return false;
-    if (candidate < 0 || candidate >= MAX_CANDIDATES_PER_SECTION) return false;
+    if (candidate < 0 || candidate >= CANDIDATES_PER_SECTION) return false;
     votes[section][candidate]++;
     save();
     return true;
@@ -67,7 +67,7 @@ public:
   int getTotal() {
     int total = 0;
     for (int s = 0; s < NUM_SECTIONS; s++)
-      for (int c = 0; c < MAX_CANDIDATES_PER_SECTION; c++)
+      for (int c = 0; c < CANDIDATES_PER_SECTION; c++)
         total += votes[s][c];
     return total;
   }
@@ -78,7 +78,7 @@ public:
     JsonArray arr = doc.to<JsonArray>();
     for (int s = 0; s < NUM_SECTIONS; s++) {
       JsonArray row = arr.createNestedArray();
-      for (int c = 0; c < MAX_CANDIDATES_PER_SECTION; c++) {
+      for (int c = 0; c < CANDIDATES_PER_SECTION; c++) {
         row.add(votes[s][c]);
       }
     }
